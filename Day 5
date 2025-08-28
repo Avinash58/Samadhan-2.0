@@ -1,0 +1,26 @@
+[
+  {
+    "student_id": "12345",
+    "first_name": "Avi",
+    "last_name": "Adi",
+    "email": "avi.@university.edu",
+    "gpa": 8.8,
+    "enrollment_status": "full-time"
+  },
+  {
+    "student_id": "67890",
+    "first_name": "Aryan",
+    "last_name": "kumar",
+    "email": "Aryan@university.edu",
+    "gpa": 7.5,
+    "enrollment_status": "part-time"
+  },
+  {
+    "student_id": "11223",
+    "first_name": "Adu",
+    "last_name": "Johnson",
+    "email": "adi.j@university.edu",
+    "gpa": 8.0,
+    "enrollment_status": "full-time"
+  }
+]
