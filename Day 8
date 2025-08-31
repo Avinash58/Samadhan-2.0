@@ -1,0 +1,69 @@
+import React, { useState } from 'react';
+// A simple ID generator for unique keys
+import { v4 as uuidv4 } from 'uuid';
+
+function TodoApp() {
+  // State for the list of to-do items
+  const [todos, setTodos] = useState([
+    { id: uuidv4(), task: 'Learn React lists' },
+    { id: uuidv4(), task: 'Understand events' },
+  ]);
+
+  // State for the text in the input field
+  const [inputValue, setInputValue] = useState('');
+
+  // Handles changes in the input field
+  const handleInputChange = (event) => {
+    setInputValue(event.target.value);
+  };
+
+  // Adds a new to-do item to the list
+  const handleAddTodo = () => {
+    // Prevent adding empty tasks
+    if (inputValue.trim() === '') return;
+
+    const newTodo = {
+      id: uuidv4(), // Generate a unique id
+      task: inputValue,
+    };
+
+    // Update the todos state with the new item
+    setTodos([...todos, newTodo]);
+    setInputValue(''); // Clear the input field
+  };
+
+  // Removes a to-do item from the list by its id
+  const handleRemoveTodo = (idToRemove) => {
+    // Filter out the item that matches the id
+    const updatedTodos = todos.filter(todo => todo.id !== idToRemove);
+    setTodos(updatedTodos);
+  };
+
+  return (
+    <div>
+      <h2>My To-Do List</h2>
+      <div>
+        <input
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          placeholder="Add a new task"
+        />
+        <button onClick={handleAddTodo}>Add</button>
+      </div>
+      <ul>
+        {/* Render the list of to-dos using .map() */}
+        {todos.map(todo => (
+          <li key={todo.id}>
+            {todo.task}
+            <button onClick={() => handleRemoveTodo(todo.id)} style={{ marginLeft: '10px' }}>
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export default TodoApp;
