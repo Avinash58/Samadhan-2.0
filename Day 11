@@ -1,0 +1,83 @@
+// app.js
+
+const express = require('express');
+const app = express();
+const port = 3000;
+
+// Middleware to parse JSON bodies
+app.use(express.json());
+
+// A simple in-memory database for demonstration purposes
+let students = [
+  { id: 1, name: 'Alice', age: 20 },
+  { id: 2, name: 'Bob', age: 22 },
+  { id: 3, name: 'Charlie', age: 21 },
+];
+
+// --- CRUD Routes ---
+
+// GET /students: Get all students
+app.get('/students', (req, res) => {
+  res.status(200).json(students);
+});
+
+// GET /students/:id: Get a single student by ID
+app.get('/students/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const student = students.find(s => s.id === id);
+
+  if (!student) {
+    return res.status(404).send('Student not found.');
+  }
+  res.status(200).json(student);
+});
+
+// POST /students: Add a new student
+app.post('/students', (req, res) => {
+  const { name, age } = req.body;
+  if (!name || !age) {
+    return res.status(400).send('Name and age are required.');
+  }
+
+  const newStudent = {
+    id: students.length > 0 ? Math.max(...students.map(s => s.id)) + 1 : 1,
+    name,
+    age
+  };
+
+  students.push(newStudent);
+  res.status(201).json(newStudent);
+});
+
+// PUT /students/:id: Update a student
+app.put('/students/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { name, age } = req.body;
+  let student = students.find(s => s.id === id);
+
+  if (!student) {
+    return res.status(404).send('Student not found.');
+  }
+
+  if (name) student.name = name;
+  if (age) student.age = age;
+
+  res.status(200).json(student);
+});
+
+// DELETE /students/:id: Delete a student
+app.delete('/students/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const initialLength = students.length;
+  students = students.filter(s => s.id !== id);
+
+  if (students.length === initialLength) {
+    return res.status(404).send('Student not found.');
+  }
+  res.status(200).send('Student deleted successfully.');
+});
+
+// Start the server
+app.listen(port, () => {
+  console.log(`Student CRUD API listening at http://localhost:${port}`);
+});
