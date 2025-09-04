@@ -1,0 +1,221 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+
+// Global variables provided by the Canvas environment
+const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+const App = () => {
+  const [todos, setTodos] = useState([]);
+  const [newTask, setNewTask] = useState('');
+  const [db, setDb] = useState(null);
+  const [auth, setAuth] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState('');
+
+  useEffect(() => {
+    // Initialize Firebase and authenticate the user
+    const app = initializeApp(firebaseConfig);
+    const authInstance = getAuth(app);
+    const dbInstance = getFirestore(app);
+
+    setAuth(authInstance);
+    setDb(dbInstance);
+
+    const authenticate = async () => {
+      try {
+        if (initialAuthToken) {
+          await signInWithCustomToken(authInstance, initialAuthToken);
+        } else {
+          await signInAnonymously(authInstance);
+        }
+      } catch (error) {
+        console.error("Firebase authentication failed:", error);
+      }
+    };
+
+    authenticate();
+
+    const unsubscribe = authInstance.onAuthStateChanged(user => {
+      if (user) {
+        setUserId(user.uid);
+        setLoading(false);
+      } else {
+        setUserId(null);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!db || !userId) return;
+
+    // Use Firestore onSnapshot to listen for real-time updates
+    const todosCollection = collection(db, `artifacts/${appId}/users/${userId}/todos`);
+    const unsubscribe = onSnapshot(todosCollection, (snapshot) => {
+      const todosData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTodos(todosData);
+    }, (error) => {
+      console.error("Error fetching todos: ", error);
+    });
+
+    return () => unsubscribe();
+  }, [db, userId]);
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    if (newTask.trim() === '') return;
+
+    try {
+      if (db && userId) {
+        await addDoc(collection(db, `artifacts/${appId}/users/${userId}/todos`), {
+          text: newTask,
+          completed: false,
+          createdAt: new Date()
+        });
+        setNewTask('');
+      } else {
+        console.error("Firestore not initialized or user not authenticated.");
+      }
+    } catch (error) {
+      console.error("Error adding todo: ", error);
+    }
+  };
+
+  const handleDeleteTask = async (id) => {
+    try {
+      if (db && userId) {
+        await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/todos`, id));
+      }
+    } catch (error) {
+      console.error("Error deleting todo: ", error);
+    }
+  };
+  
+  const handleEditTask = (id, text) => {
+    setEditingId(id);
+    setEditingText(text);
+  };
+  
+  const handleSaveEdit = async (id) => {
+    try {
+      if (db && userId) {
+        await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/todos`, id), {
+          text: editingText
+        });
+        setEditingId(null);
+        setEditingText('');
+      }
+    } catch (error) {
+      console.error("Error updating todo: ", error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white font-inter">
+        <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white font-inter">
+      <div className="w-full max-w-xl mx-auto p-6 bg-gray-800 rounded-2xl shadow-lg">
+        <h1 className="text-4xl font-bold text-center mb-6 text-gray-100">To-Do List</h1>
+        <div className="text-sm text-center text-gray-400 mb-4">
+          <p>Your User ID: <span className="font-mono break-all">{userId}</span></p>
+          <p className="mt-1">Share this ID to collaborate on tasks!</p>
+        </div>
+
+        <form onSubmit={handleAddTask} className="flex gap-2 mb-6">
+          <input
+            type="text"
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            className="flex-grow p-3 rounded-lg bg-gray-700 text-gray-200 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Add a new task..."
+          />
+          <button
+            type="submit"
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-md"
+          >
+            Add
+          </button>
+        </form>
+
+        <ul className="space-y-3">
+          {todos.length > 0 ? (
+            todos.map((todo) => (
+              <li
+                key={todo.id}
+                className="flex items-center justify-between p-4 bg-gray-700 rounded-lg shadow-sm"
+              >
+                {editingId === todo.id ? (
+                  <input
+                    type="text"
+                    value={editingText}
+                    onChange={(e) => setEditingText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveEdit(todo.id);
+                    }}
+                    className="flex-grow p-2 rounded-lg bg-gray-600 text-gray-100 border border-gray-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                    autoFocus
+                  />
+                ) : (
+                  <span className="text-gray-200">{todo.text}</span>
+                )}
+                <div className="flex gap-2 ml-4">
+                  {editingId === todo.id ? (
+                    <button
+                      onClick={() => handleSaveEdit(todo.id)}
+                      className="text-green-400 hover:text-green-500 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleEditTask(todo.id, todo.text)}
+                        className="text-yellow-400 hover:text-yellow-500 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                          <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTask(todo.id)}
+                        className="text-red-400 hover:text-red-500 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))
+          ) : (
+            <li className="text-center text-gray-400 p-4">Your to-do list is empty!</li>
+          )}
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+export default App;
