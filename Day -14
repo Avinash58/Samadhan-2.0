@@ -1,0 +1,128 @@
+# This is a backend-only authentication server using Flask and JWT.
+# It provides three endpoints: /register, /login, and a /protected route
+# that requires a valid JWT to access.
+
+import jwt
+from datetime import datetime, timedelta
+from functools import wraps
+from flask import Flask, request, jsonify
+from passlib.hash import pbkdf2_sha256
+
+# --- Configuration ---
+# Use a strong, random secret key in a real application.
+# This key is used to sign and verify JWTs.
+SECRET_KEY = "your-very-secure-and-secret-key-here"
+# In a real application, you would use a proper database (e.g., SQLite, PostgreSQL).
+# This dictionary serves as a simple in-memory "database" for demonstration.
+users_db = {}
+
+# --- Flask Application Setup ---
+app = Flask(__name__)
+
+# --- Helper Functions ---
+
+# Decorator to protect routes that require authentication.
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # JWT token is expected in the Authorization header as 'Bearer <token>'.
+        token = None
+        if 'Authorization' in request.headers:
+            try:
+                # Split the header to get the token part.
+                token = request.headers['Authorization'].split(" ")[1]
+            except IndexError:
+                return jsonify({"message": "Token is missing or malformed!"}), 401
+
+        if not token:
+            return jsonify({"message": "Token is missing!"}), 401
+
+        try:
+            # Decode the token using the secret key.
+            # This verifies the signature and checks for expiration.
+            data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            # Get the current user from the token's payload.
+            current_user = data['username']
+        except jwt.ExpiredSignatureError:
+            # Handle expired token case.
+            return jsonify({"message": "Token has expired!"}), 401
+        except jwt.InvalidTokenError:
+            # Handle any other token validation errors.
+            return jsonify({"message": "Token is invalid!"}), 401
+
+        # Pass the current user to the wrapped function.
+        return f(current_user, *args, **kwargs)
+
+    return decorated
+
+# --- API Endpoints ---
+
+@app.route("/register", methods=["POST"])
+def register_user():
+    """
+    Registers a new user. Expects a JSON payload with 'username' and 'password'.
+    Hashes the password before storing it.
+    """
+    data = request.get_json()
+    if not data or 'username' not in data or 'password' not in data:
+        return jsonify({"message": "Username and password are required"}), 400
+
+    username = data['username']
+    password = data['password']
+
+    if username in users_db:
+        return jsonify({"message": "User already exists"}), 409
+
+    # Hash the password for security before storing it.
+    hashed_password = pbkdf2_sha256.hash(password)
+    users_db[username] = {'password': hashed_password}
+
+    print(f"Registered user: {username}")
+    return jsonify({"message": "User registered successfully"}), 201
+
+@app.route("/login", methods=["POST"])
+def login_user():
+    """
+    Authenticates a user and returns a JWT.
+    """
+    data = request.get_json()
+    if not data or 'username' not in data or 'password' not in data:
+        return jsonify({"message": "Username and password are required"}), 400
+
+    username = data['username']
+    password = data['password']
+
+    # Check if the user exists and the password is correct.
+    if username not in users_db or not pbkdf2_sha256.verify(password, users_db[username]['password']):
+        return jsonify({"message": "Invalid username or password"}), 401
+
+    # Define the payload for the JWT.
+    # The 'exp' claim sets the token's expiration time.
+    payload = {
+        'username': username,
+        'exp': datetime.utcnow() + timedelta(minutes=30)  # Token expires in 30 minutes
+    }
+    # Create the JWT using the secret key and a signing algorithm.
+    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+    print(f"User {username} logged in successfully, returning JWT.")
+    return jsonify({
+        "message": "Login successful",
+        "token": token
+    })
+
+@app.route("/protected", methods=["GET"])
+@token_required
+def protected_route(current_user):
+    """
+    A protected route that can only be accessed with a valid JWT.
+    The 'token_required' decorator handles authentication.
+    """
+    return jsonify({
+        "message": f"Hello, {current_user}! You have successfully accessed a protected resource."
+    })
+
+# --- Main Entry Point ---
+if __name__ == "__main__":
+    # The server will run on http://127.0.0.1:5000/
+    app.run(debug=True)
