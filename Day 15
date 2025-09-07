@@ -1,0 +1,274 @@
+import { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  signInWithCustomToken,
+  signInAnonymously
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
+
+// Global variables provided by the environment
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Helper function to get the user ID
+const getUserId = (user) => user?.uid || (typeof crypto !== 'undefined' ? crypto.randomUUID() : 'anonymous');
+
+const App = () => {
+  // State management
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [user, setUser] = useState(null);
+  const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState('login'); // 'login', 'home', 'protected'
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [userData, setUserData] = useState('');
+
+  // Authentication state listener
+  useEffect(() => {
+    // Initial sign-in with custom token or anonymously
+    const initialSignIn = async () => {
+      try {
+        if (initialAuthToken) {
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Initial sign-in failed:", e);
+      }
+    };
+    initialSignIn();
+
+    // Set up the listener for auth state changes
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+      if (currentUser) {
+        // User is signed in, redirect to home
+        setCurrentPage('home');
+      } else {
+        // No user is signed in, redirect to login
+        setCurrentPage('login');
+      }
+    });
+
+    // Cleanup the listener on component unmount
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore data loading logic
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (user && isAuthReady) {
+        setError(null);
+        const userId = getUserId(user);
+        try {
+          const docRef = doc(db, 'artifacts', appId, 'users', userId, 'data', 'profile');
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setUserData(docSnap.data().message);
+          } else {
+            setUserData('No protected data found. Click "Save Protected Data" to add some.');
+          }
+        } catch (e) {
+          setError('Failed to load protected data.');
+          console.error("Error loading document: ", e);
+        }
+      }
+    };
+
+    if (currentPage === 'protected') {
+      loadUserData();
+    }
+  }, [currentPage, user, isAuthReady]);
+
+  // Handle form submissions
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      setError(e.message);
+      console.error("Login failed: ", e);
+    }
+  };
+
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      setError(e.message);
+      console.error("Signup failed: ", e);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setError(null);
+    try {
+      await signOut(auth);
+      setUserData('');
+    } catch (e) {
+      setError(e.message);
+      console.error("Sign out failed: ", e);
+    }
+  };
+
+  const handleSaveProtectedData = async () => {
+    setError(null);
+    if (!user) {
+      setError('Please log in to save data.');
+      return;
+    }
+    const userId = getUserId(user);
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'users', userId, 'data', 'profile');
+      await setDoc(docRef, { message: 'This is private data for user ' + userId });
+      setUserData('Data saved successfully!');
+    } catch (e) {
+      setError('Failed to save protected data.');
+      console.error("Error writing document: ", e);
+    }
+  };
+
+  // Render the current page
+  const renderPage = () => {
+    if (!isAuthReady) {
+      return (
+        <div className="flex justify-center items-center h-full">
+          <div className="text-xl font-medium text-gray-500">Loading authentication...</div>
+        </div>
+      );
+    }
+
+    if (currentPage === 'login') {
+      return (
+        <div className="w-full max-w-sm bg-white p-6 rounded-xl shadow-xl border border-gray-200">
+          <h2 className="text-3xl font-bold mb-4 text-center text-gray-800">Login / Sign Up</h2>
+          <form onSubmit={handleLogin} className="flex flex-col space-y-4">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200"
+              required
+            />
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-blue-700 transition-all duration-200"
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              onClick={handleSignUp}
+              className="w-full bg-blue-400 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-blue-500 transition-all duration-200"
+            >
+              Sign Up
+            </button>
+          </form>
+          {error && <p className="text-red-500 text-sm mt-4 text-center">{error}</p>}
+        </div>
+      );
+    }
+
+    if (currentPage === 'home') {
+      return (
+        <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-xl border border-gray-200 text-center">
+          <h2 className="text-4xl font-extrabold text-blue-600 mb-4">Welcome!</h2>
+          <p className="text-lg text-gray-600 mb-6">
+            You are successfully logged in. Your user ID is:
+          </p>
+          <div className="bg-gray-100 text-gray-800 p-4 rounded-lg font-mono text-sm break-all">
+            {user?.uid}
+          </div>
+          <div className="mt-8 space-y-4">
+            <button
+              onClick={() => setCurrentPage('protected')}
+              className="w-full bg-green-500 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-green-600 transition-all duration-200"
+            >
+              Go to Protected Page
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="w-full bg-red-500 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-red-600 transition-all duration-200"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (currentPage === 'protected') {
+      return (
+        <div className="w-full max-w-lg bg-white p-8 rounded-xl shadow-xl border border-gray-200 text-center">
+          <h2 className="text-4xl font-extrabold text-green-600 mb-4">Protected Route</h2>
+          <p className="text-lg text-gray-600 mb-6">
+            This page is only visible to authenticated users.
+          </p>
+          <div className="bg-gray-100 p-6 rounded-lg mb-6 shadow-inner">
+            <h3 className="text-xl font-bold mb-2 text-gray-800">Your Private Data</h3>
+            <p className="text-gray-700 break-words">{userData}</p>
+          </div>
+          <div className="space-y-4">
+            <button
+              onClick={handleSaveProtectedData}
+              className="w-full bg-purple-500 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-purple-600 transition-all duration-200"
+            >
+              Save Protected Data
+            </button>
+            <button
+              onClick={() => setCurrentPage('home')}
+              className="w-full bg-blue-500 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-blue-600 transition-all duration-200"
+            >
+              Go to Home Page
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="w-full bg-red-500 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-red-600 transition-all duration-200"
+            >
+              Sign Out
+            </button>
+          </div>
+          {error && <p className="text-red-500 text-sm mt-4 text-center">{error}</p>}
+        </div>
+      );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
+      {renderPage()}
+    </div>
+  );
+};
+
+export default App;
