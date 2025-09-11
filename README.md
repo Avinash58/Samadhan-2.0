@@ -72,7 +72,7 @@ Database: Firestore
 
 AI engine: Gemini api
 
-👨‍👩‍👦 Team – Syntax Solvers
+👨‍👩‍👦 Team – Team Rocket
 
 Team Lead: Avinash Raj
 
